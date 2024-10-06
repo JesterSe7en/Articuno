@@ -5,6 +5,8 @@ import (
 	"html/template"
 	"net/http"
 	"os"
+
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -31,4 +33,15 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 	}
 	tmpl.Execute(w, nil)
+}
+
+func GetCachedData(city string) {
+	rdb := redis.NewClient(&redis.Options{
+		Addr: "localhost:6379",
+	})
+
+	if rdb == nil {
+		fmt.Println("Redis connection error")
+		os.Exit(1)
+	}
 }
