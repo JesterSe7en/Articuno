@@ -50,10 +50,11 @@ This project demonstrates:
    ```bash
    git clone https://github.com/yourusername/weather_api.git
    cd weather_api
-2. **Set up environment variables**:  Make sure to set the `WEATHER_API_KEY` and `REDIS_URL` environment variables.
+2. **Set up environment variables**:  Make sure to set the `WEATHER_API_KEY`, `REDIS_PASSWORD`, and `REDIS_URL` environment variables.
    ```bash
    export WEATHER_API_KEY="your_api_key"
-   export REDIS_URL="redis://localhost:6379"
+   export REDIS_URL="localhost:6379"
+   export REDIS_PASSWORD="your_redis_password"
    ```
 3. **Install Redis (if not installed already)**:
    ```bash
