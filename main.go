@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"html/template"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -38,7 +39,6 @@ func main() {
 
 	StartWebServer(rdb, apiKey)
 }
-
 func StartWebServer(rdb *redis.Client, apiKey string) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		RootHandler(w, r, rdb, apiKey)
@@ -48,13 +48,9 @@ func StartWebServer(rdb *redis.Client, apiKey string) {
 	http.ListenAndServe(":8080", nil)
 }
 
-// GetRedisConnection creates a Redis client object based on the REDIS_URL and
-// REDIS_PASSWORD environment variables. If either of these variables is not
-// set, it prints an error message and returns nil. Otherwise, it returns a
-// Redis client object.
 func GetRedisConnection() *redis.Client {
-	redisURL := strings.TrimSpace(os.Getenv("REDIS_URL"))
-	redisPassword := strings.TrimSpace(os.Getenv("REDIS_PASSWORD"))
+	redisURL := os.Getenv("REDIS_URL")
+	redisPassword := os.Getenv("REDIS_PASSWORD")
 	if redisURL == "" || redisPassword == "" {
 		fmt.Println("Please set the REDIS_URL and REDIS_PASSWORD environment variables")
 		return nil
@@ -62,7 +58,6 @@ func GetRedisConnection() *redis.Client {
 	return redis.NewClient(&redis.Options{
 		Addr:     redisURL,
 		Password: redisPassword,
-		DB:       0,
 	})
 }
 func RootHandler(w http.ResponseWriter, r *http.Request, rdb *redis.Client, apiKey string) {
@@ -83,30 +78,38 @@ func RootHandler(w http.ResponseWriter, r *http.Request, rdb *redis.Client, apiK
 		http.Error(w, "City not found", http.StatusNotFound)
 		return
 	}
-	fmt.Printf(weatherData)
-	fmt.Fprintf(w, "City: %s", city)
+	fmt.Fprintf(w, "City: %s \nWeather Data: %s ", city, weatherData)
 }
 
 func getWeatherData(city string, rdb *redis.Client, apiKey string) (string, error) {
 	// Check redis cache, if not in redis, fetch from API
-	val, err := rdb.Get(context.Background(), city).Result()
+	val, _ := rdb.Get(context.Background(), city).Result()
 
-	// Check if the key exists in redis - must use redis.nil to compare
-	if err != redis.Nil {
-		return "", err // Return an empty string and the error
-	} else if val != "" {
-		return val, nil // Return the value and nil for no error
+	if val != "" {
+		return val, nil
 	}
 
-	// no data in redis, fetch from API
+	// no data in redis, fetch from API; must use query parameters to set api key (visualcrossing.com expects this)
 	url := fmt.Sprintf("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/%s?key=%s", city, apiKey)
-	r, err := http.Get(url)
+
+	resp, err := http.Get(url)
 	if err != nil {
 		return "", err
-	} else if r.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Request failed with status code: %d", r.StatusCode)
+	} else if resp.StatusCode != 200 {
+		return "", fmt.Errorf("Request failed with status code: %d", resp.StatusCode)
 	}
-	defer r.Body.Close()
+	defer resp.Body.Close()
 
-	return "", nil
+	weatherData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err // Return an empty string and the error
+	} // Return the value and nil for no error
+
+	// Save data in redis
+	err = rdb.Set(context.Background(), city, string(weatherData), 0).Err()
+	if err != nil {
+		return "", err
+	}
+
+	return string(weatherData), nil
 }
