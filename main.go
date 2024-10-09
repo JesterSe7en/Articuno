@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -35,63 +36,77 @@ func main() {
 	// url := fmt.Sprintf("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/%s/%s/%s?key=%s", location, date1, date2, apiKey)
 	// fmt.Println(url)
 
-	StartWebServer()
+	StartWebServer(rdb, apiKey)
 }
 
-func StartWebServer() {
-	http.HandleFunc("/", RootHandler)
+func StartWebServer(rdb *redis.Client, apiKey string) {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		RootHandler(w, r, rdb, apiKey)
+	})
 
 	fmt.Println("Listening on port localhost:8080")
 	http.ListenAndServe(":8080", nil)
 }
 
+// GetRedisConnection creates a Redis client object based on the REDIS_URL and
+// REDIS_PASSWORD environment variables. If either of these variables is not
+// set, it prints an error message and returns nil. Otherwise, it returns a
+// Redis client object.
 func GetRedisConnection() *redis.Client {
-	redisURL := os.Getenv("REDIS_URL")
-	if redisURL == "" {
-		fmt.Println("Please set the REDIS_URL environment variable")
+	redisURL := strings.TrimSpace(os.Getenv("REDIS_URL"))
+	redisPassword := strings.TrimSpace(os.Getenv("REDIS_PASSWORD"))
+	if redisURL == "" || redisPassword == "" {
+		fmt.Println("Please set the REDIS_URL and REDIS_PASSWORD environment variables")
 		return nil
 	}
-
-	redisPassword := os.Getenv("REDIS_PASSWORD")
-	if redisPassword == "" {
-		fmt.Println("Please set the REDIS_PASSWORD environment variable")
-		return nil
-	}
-
-	rdb := redis.NewClient(&redis.Options{
+	return redis.NewClient(&redis.Options{
 		Addr:     redisURL,
 		Password: redisPassword,
 		DB:       0,
 	})
-	return rdb
 }
-
-func RootHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method == "POST" {
-		err := r.ParseForm()
+func RootHandler(w http.ResponseWriter, r *http.Request, rdb *redis.Client, apiKey string) {
+	if r.Method != "POST" {
+		tmpl, err := template.New("index.html").ParseFiles("index.html") // load the html template
 		if err != nil {
-			fmt.Println("Error parsing form:", err)
+			fmt.Println(err)
 			return
 		}
-		// Handle form submission
-		city := html.EscapeString(r.FormValue("city"))
-
-		// Get weather data
-		weatherData := getWeatherData(city)
-
-		// Render HTML template
-		fmt.Fprintf(w, "City: %s", city)
+		tmpl.Execute(w, nil)
 		return
 	}
 
-	tmpl, err := template.ParseFiles("index.html") // load the html template
+	city := html.EscapeString(r.FormValue("city"))
+	weatherData, err := getWeatherData(city, rdb, apiKey)
+
 	if err != nil {
-		fmt.Println(err)
+		http.Error(w, "City not found", http.StatusNotFound)
+		return
 	}
-	tmpl.Execute(w, nil)
+	fmt.Printf(weatherData)
+	fmt.Fprintf(w, "City: %s", city)
 }
 
-func getWeatherData(city string) map[string]interface{} {
+func getWeatherData(city string, rdb *redis.Client, apiKey string) (string, error) {
 	// Check redis cache, if not in redis, fetch from API
+	val, err := rdb.Get(context.Background(), city).Result()
 
+	// Check if the key exists in redis - must use redis.nil to compare
+	if err != redis.Nil {
+		return "", err // Return an empty string and the error
+	} else if val != "" {
+		return val, nil // Return the value and nil for no error
+	}
+
+	// no data in redis, fetch from API
+	url := fmt.Sprintf("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/%s?key=%s", city, apiKey)
+	r, err := http.Get(url)
+	if err != nil {
+		return "", err
+	} else if r.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Request failed with status code: %d", r.StatusCode)
+	}
+	defer r.Body.Close()
+
+	return "", nil
 }
