@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"html"
 	"html/template"
 	"net/http"
 	"os"
@@ -25,14 +26,13 @@ func main() {
 	}
 
 	// Get the API key from the environment variable
-	// apiKey := os.Getenv("WEATHER_API_KEY")
-	// if apiKey == "" {
-	// 	fmt.Println("Please set the WEATHER_API_KEY environment variable")
-	// 	os.Exit(1)
-	// }
+	apiKey := os.Getenv("WEATHER_API_KEY")
+	if apiKey == "" {
+		fmt.Println("Please set the WEATHER_API_KEY environment variable")
+		os.Exit(1)
+	}
 
-	// url := "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/"
-
+	// url := fmt.Sprintf("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/%s/%s/%s?key=%s", location, date1, date2, apiKey)
 	// fmt.Println(url)
 
 	StartWebServer()
@@ -74,7 +74,12 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Handle form submission
-		city := r.FormValue("city")
+		city := html.EscapeString(r.FormValue("city"))
+
+		// Get weather data
+		weatherData := getWeatherData(city)
+
+		// Render HTML template
 		fmt.Fprintf(w, "City: %s", city)
 		return
 	}
@@ -84,4 +89,9 @@ func RootHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(err)
 	}
 	tmpl.Execute(w, nil)
+}
+
+func getWeatherData(city string) map[string]interface{} {
+	// Check redis cache, if not in redis, fetch from API
+
 }
