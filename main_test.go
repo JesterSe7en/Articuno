@@ -13,22 +13,31 @@ import (
 )
 
 func TestGetWeatherData(t *testing.T) {
-	// Setup a mock Redis client
+	// Just use existing Redis since developing on Windows rn
+	// Ideally use a local Redis instance
+	redis_url := os.Getenv("REDIS_URL")
+	redis_password := os.Getenv("REDIS_PASSWORD")
 	rdb := redis.NewClient(&redis.Options{
-		Addr: "localhost:6379", // Use a test Redis instance
+		Addr:     redis_url, // Use existing Redis instance
+		Password: redis_password,
 	})
 
 	// Mock API response
-	apiKey := os.Getenv("WEATHER_API_KEY")
 	city := "London"
 
 	// Assume you have a way to mock the weather API response
 	// This is a simple implementation just for testing purposes
 	mockWeatherData := `{"location": "London", "temperature": "15°C"}`
-	rdb.Set(context.Background(), city, mockWeatherData, 0)
+	res, err := rdb.Set(context.Background(), city, mockWeatherData, 0).Result()
+	if err != nil {
+		t.Errorf("Expected no error, got %v", err)
+	}
+	if res != "OK" {
+		t.Errorf("Expected 'OK', got %s", res)
+	}
 
 	// Call the function
-	weatherData, err := getWeatherData(city, rdb, apiKey)
+	weatherData, err := getWeatherData(city, rdb, "")
 	if err != nil {
 		t.Errorf("Expected no error, got %v", err)
 	}
@@ -38,7 +47,6 @@ func TestGetWeatherData(t *testing.T) {
 		t.Errorf("Expected %s, got %s", expected, weatherData)
 	}
 }
-
 func TestRootHandler_Get(t *testing.T) {
 	// Create a request to pass to our handler.
 	req, err := http.NewRequest("GET", "/", nil)
