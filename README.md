@@ -84,13 +84,15 @@ This project demonstrates:
 
 ## Why This Project? 🤔
 
-This project was built to showcase backend engineering skills, especially in:
+I built this project to highlight some of my backend engineering skills, focusing on:
 
-    - **API Integration**: Efficiently consuming and processing third-party APIs.
-    - **Web Development in Go**: Building a fast, lightweight web server.
-    - **Caching & Optimization**: Implementing Redis for real-world optimization.
-    - **Handling User Input**: Validating and processing user input in a web application.
-    - **Scalability**: Structuring code to allow for future enhancements and more robust services.
+- **API Integration**: Learning to work with third-party APIs to fetch real-time weather data.
+- **Web Development in Go**: Creating a lightweight web server that’s quick and efficient.
+- **Caching with Redis**: Using Redis to optimize performance and reduce API calls.
+- **User Input Handling**: Making sure user input is validated and processed smoothly.
+- **Scalability**: Structuring the code for future growth and improvements.
+- **Unit Testing**: Adding some basic tests to keep everything running smoothly.
+- **Documentation**: Writing clear instructions to help others understand how to use the project.
 
 ## Acknowledgements 🙏
 
