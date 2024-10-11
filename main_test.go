@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -47,34 +48,55 @@ func TestGetWeatherData(t *testing.T) {
 		t.Errorf("Expected %s, got %s", expected, weatherData)
 	}
 }
+
 func TestRootHandler_Get(t *testing.T) {
-	// Create a request to pass to our handler.
-	req, err := http.NewRequest("GET", "/", nil)
-	if err != nil {
-		t.Fatal(err)
+
+	tests := []struct {
+		route     string
+		filename  string
+		expectErr bool
+	}{
+		{"/", "index.html", false},
 	}
+	
+	for _, tt := range tests {
 
-	// Create a ResponseRecorder to record the response.
-	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		RootHandler(w, r, nil, os.Getenv("WEATHER_API_KEY")) // Pass nil for Redis in this test
-	})
+		// Create a request to pass to our handler.
+		req, err := http.NewRequest("GET", tt.route, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	// Call the handler with the request and response recorder.
-	handler.ServeHTTP(rr, req)
+		// Create a ResponseRecorder to record the response.
+		rr := httptest.NewRecorder()
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			RootHandler(w, r, nil, os.Getenv("WEATHER_API_KEY")) // Pass nil for Redis in this test
+		})
 
-	// Check the status code is what we expect.
-	if status := rr.Code; status != http.StatusOK {
-		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
-	}
+		// Call the handler with the request and response recorder.
+		handler.ServeHTTP(rr, req)
 
-	// Check that the response body contains the expected content
-	expected := "HTML content for the form goes here" // Replace with the expected HTML content
-	if rr.Body.String() != expected {
-		t.Errorf("handler returned unexpected body: got %v want %v", rr.Body.String(), expected)
+		// Check the status code is what we expect.
+		if status := rr.Code; status != http.StatusOK {
+			t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
+		}
+
+		f, err := os.Open(tt.filename)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		contents, err := io.ReadAll(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		expected := string(contents)
+		if rr.Body.String() != expected {
+			t.Errorf("handler returned unexpected body: got %v want %v", rr.Body.String(), expected)
+		}
 	}
 }
-
 // Test for RootHandler POST method
 func TestRootHandler_Post(t *testing.T) {
 	// Create a request with the city parameter.
