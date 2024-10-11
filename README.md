@@ -74,6 +74,13 @@ This project demonstrates:
    ```
 7. **Access the web application**: Open your browser and go to `http://localhost:8080` to access the weather form.
 
+## Testing 🧪
+
+Basic unit tests are provided in the `main_test.go` file.
+
+To run them, run `go test` from the root directory.
+
+
 ## Usage 📝
 
 1. **Input a city name or ZIP code**: Navigate to the web page and enter either a city name or a ZIP code in the form.
