@@ -14,7 +14,7 @@ import (
 
 func main() {
 
-	rdb := GetRedisConnection()
+	rdb := getRedisConnection()
 	if rdb == nil {
 		os.Exit(1)
 	}
@@ -36,18 +36,18 @@ func main() {
 	// url := fmt.Sprintf("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/%s/%s/%s?key=%s", location, date1, date2, apiKey)
 	// fmt.Println(url)
 
-	StartWebServer(rdb, apiKey)
+	startWebServer(rdb, apiKey)
 }
-func StartWebServer(rdb *redis.Client, apiKey string) {
+func startWebServer(rdb *redis.Client, apiKey string) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		RootHandler(w, r, rdb, apiKey)
+		rootHandler(w, r, rdb, apiKey)
 	})
 
 	fmt.Println("Listening on port localhost:8080")
 	http.ListenAndServe(":8080", nil)
 }
 
-func GetRedisConnection() *redis.Client {
+func getRedisConnection() *redis.Client {
 	redisURL := os.Getenv("REDIS_URL")
 	redisPassword := os.Getenv("REDIS_PASSWORD")
 	if redisURL == "" || redisPassword == "" {
@@ -59,7 +59,7 @@ func GetRedisConnection() *redis.Client {
 		Password: redisPassword,
 	})
 }
-func RootHandler(w http.ResponseWriter, r *http.Request, rdb *redis.Client, apiKey string) {
+func rootHandler(w http.ResponseWriter, r *http.Request, rdb *redis.Client, apiKey string) {
 	if r.Method != "POST" {
 		tmpl, err := template.New("index.html").ParseFiles("index.html") // load the html template
 		if err != nil {
