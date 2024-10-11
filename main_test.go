@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,78 @@ import (
 
 	"github.com/redis/go-redis/v9"
 )
+
+// Global variables for Redis client and context
+var rdb *redis.Client
+var ctx = context.Background()
+
+func globalSetup() error {
+	if rdb != nil {
+		return fmt.Errorf("Attempted to setup global redis client twice")
+	}
+
+	redis_url := os.Getenv("REDIS_URL")
+	redis_password := os.Getenv("REDIS_PASSWORD")
+	if redis_url == "" || redis_password == "" {
+		return fmt.Errorf("Please set the REDIS_URL and REDIS_PASSWORD environment variables")
+	}
+
+	rdb = redis.NewClient(&redis.Options{
+		Addr:     redis_url,
+		Password: redis_password,
+		DB:       0,
+	})
+
+	testingData := []struct {
+		city        string
+		weatherData string
+	}{
+		{"London", `{"location": "London", "temperature": "15°C"}`},
+		{"Paris", `{"location": "Paris", "temperature": "18°C"}`},
+		{"Berlin", `{"location": "Berlin", "temperature": "13°C"}`},
+		{"Amsterdam", `{"location": "Amsterdam", "temperature": "14°C"}`},
+	}
+
+	pipe := rdb.Pipeline()
+
+	for _, data := range testingData {
+		pipe.Set(ctx, data.city, data.weatherData, 0)
+	}
+	cmds, err := pipe.Exec(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	// check individual errors
+	for _, cmd := range cmds {
+		if cmd.Err() != nil {
+			return cmd.Err()
+		}
+	}
+	return nil
+}
+func globalTeardown() {
+	if rdb != nil {
+		rdb.Close()
+	}
+}
+
+func TestMain(m *testing.M) {
+	if err := globalSetup(); err != nil {
+		fmt.Println("Test setup failed: ", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("Test setup successful; running tests...")
+
+	// code := m.Run()
+
+	globalTeardown()
+
+	os.Exit(0)
+	// os.Exit(code)
+}
 
 func TestGetWeatherData(t *testing.T) {
 	// Just use existing Redis since developing on Windows rn
@@ -50,7 +123,6 @@ func TestGetWeatherData(t *testing.T) {
 }
 
 func TestRootHandler_Get(t *testing.T) {
-
 	tests := []struct {
 		route     string
 		filename  string
@@ -58,7 +130,7 @@ func TestRootHandler_Get(t *testing.T) {
 	}{
 		{"/", "index.html", false},
 	}
-	
+
 	for _, tt := range tests {
 
 		// Create a request to pass to our handler.
@@ -70,7 +142,7 @@ func TestRootHandler_Get(t *testing.T) {
 		// Create a ResponseRecorder to record the response.
 		rr := httptest.NewRecorder()
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			RootHandler(w, r, nil, os.Getenv("WEATHER_API_KEY")) // Pass nil for Redis in this test
+			rootHandler(w, r, nil, os.Getenv("WEATHER_API_KEY")) // Pass nil for Redis in this test
 		})
 
 		// Call the handler with the request and response recorder.
@@ -97,13 +169,13 @@ func TestRootHandler_Get(t *testing.T) {
 		}
 	}
 }
+
 // Test for RootHandler POST method
 func TestRootHandler_Post(t *testing.T) {
 	// Create a request with the city parameter.
 	form := url.Values{}
 	form.Add("city", "London")
 	req, err := http.NewRequest("POST", "/", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +183,7 @@ func TestRootHandler_Post(t *testing.T) {
 	// Create a ResponseRecorder to record the response.
 	rr := httptest.NewRecorder()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		RootHandler(w, r, nil, os.Getenv("WEATHER_API_KEY")) // Pass nil for Redis in this test
+		rootHandler(w, r, nil, os.Getenv("WEATHER_API_KEY")) // Pass nil for Redis in this test
 	})
 
 	// Call the handler with the request and response recorder.
@@ -163,7 +235,7 @@ func TestRootHandler_Post_ValidInputs(t *testing.T) {
 
 			rr := httptest.NewRecorder()
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				RootHandler(w, r, nil, "test_api_key") // Pass nil for Redis in this test
+				rootHandler(w, r, nil, "test_api_key") // Pass nil for Redis in this test
 			})
 
 			handler.ServeHTTP(rr, req)
