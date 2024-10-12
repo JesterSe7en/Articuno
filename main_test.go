@@ -71,19 +71,19 @@ func globalTeardown() {
 }
 
 func TestMain(m *testing.M) {
-	if err := globalSetup(); err != nil {
+	err := globalSetup()
+	if err != nil {
 		fmt.Println("Test setup failed: ", err)
+		globalTeardown()
 		os.Exit(1)
 	}
 
+	defer globalTeardown()
+
 	fmt.Println("Test setup successful; running tests...")
+	code := m.Run()
 
-	// code := m.Run()
-
-	globalTeardown()
-
-	os.Exit(0)
-	// os.Exit(code)
+	os.Exit(code)
 }
 
 func TestGetWeatherData(t *testing.T) {
