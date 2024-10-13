@@ -192,29 +192,36 @@ func TestRootHandler_Post(t *testing.T) {
 	// Create a request with the city parameter.
 	form := url.Values{}
 	form.Add("city", "London")
-	req, err := http.NewRequest("POST", "/", strings.NewReader(form.Encode()))
+	url := fmt.Sprintf("http://localhost:%s?%s", server.Addr, form.Encode())
+	req, err := http.NewRequest("POST", url, nil)
+	req.Form = form
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Create a ResponseRecorder to record the response.
-	rr := httptest.NewRecorder()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		rootHandler(w, r, nil, os.Getenv("WEATHER_API_KEY")) // Pass nil for Redis in this test
-	})
+	client := &http.Client{}
+	resp, err := client.Do(req)
 
-	// Call the handler with the request and response recorder.
-	handler.ServeHTTP(rr, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
 
 	// Check the status code is what we expect.
-	if status := rr.Code; status != http.StatusOK {
+	if status := resp.StatusCode; status != http.StatusOK {
 		t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
+		t.FailNow()
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	// Check that the response body contains the expected content (you may want to adjust this)
 	expected := "City: London \nWeather Data: " // Adjust according to your actual data
-	if !strings.Contains(rr.Body.String(), expected) {
-		t.Errorf("handler returned unexpected body: got %v want to contain %v", rr.Body.String(), expected)
+	if !strings.Contains(string(body), expected) {
+		t.Errorf("handler returned unexpected body")
 	}
 }
 
