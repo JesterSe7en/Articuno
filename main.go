@@ -175,7 +175,7 @@ func getWeatherData(city string, rdb *redis.Client, apiKey string) (string, erro
 	} // Return the value and nil for no error
 
 	// Save data in redis
-	err = rdb.Set(context.Background(), city, string(weatherData), 24*time.Hour).Err()
+	err = rdb.Set(context.Background(), city, string(weatherData), time.Hour).Err()
 	if err != nil {
 		return "", err
 	}
