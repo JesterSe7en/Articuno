@@ -6,12 +6,9 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -23,10 +20,11 @@ var server = &http.Server{
 	Addr: ":8080",
 }
 var sigChan = make(chan os.Signal, 1)
+var serverReady = make(chan struct{})
 
 func setup() error {
 
-	// Initalize the redis client
+	// Initialize the Redis client
 	if testRedisClient != nil {
 		return fmt.Errorf("attempted to setup test redis client twice")
 	}
@@ -71,17 +69,26 @@ func setup() error {
 		}
 	}
 
+	// Start the web server in a goroutine
 	go func() {
+		// Signal readiness when the server starts accepting connections
+		mux := http.NewServeMux()
+		mux.HandleFunc("/health-check", func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+
+		server.Handler = mux
+
+		close(serverReady) // Signal that the server is ready to handle requests
+
 		if err := startWebServer(server, testRedisClient, os.Getenv("WEATHER_API_KEY")); err != nil {
 			log.Fatalf("Failed to start web server: %v", err)
 		}
 	}()
 
-	go func() {
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM) // respond to SIGINT(ctrl+c) and SIGTERM (system asks the program to terminate gracefully)
-		<-sigChan                                               // block until a signal is received
-	}()
-
+	// Wait for server readiness before returning
+	<-serverReady
+	log.Println("Web server ready.")
 	return nil
 }
 
@@ -151,22 +158,21 @@ func TestRootHandler_Get(t *testing.T) {
 	for _, tt := range tests {
 
 		// Create a request to pass to our handler.
-		req, err := http.NewRequest("GET", tt.route, nil)
+		req, err := http.NewRequest("GET", fmt.Sprintf("http://localhost%s%s", server.Addr, tt.route), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		// Create a ResponseRecorder to record the response.
-		rr := httptest.NewRecorder()
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			rootHandler(w, r, nil, os.Getenv("WEATHER_API_KEY")) // Pass nil for Redis in this test
-		})
+		client := &http.Client{}
+		resp, err := client.Do(req)
 
-		// Call the handler with the request and response recorder.
-		handler.ServeHTTP(rr, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
 
 		// Check the status code is what we expect.
-		if status := rr.Code; status != http.StatusOK {
+		if status := resp.StatusCode; status != http.StatusOK {
 			t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
 		}
 
@@ -180,9 +186,14 @@ func TestRootHandler_Get(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		expected := string(contents)
-		if rr.Body.String() != expected {
-			t.Errorf("handler returned unexpected body: got %v want %v", rr.Body.String(), expected)
+		if string(body) != expected {
+			t.Errorf("handler returned unexpected body")
 		}
 	}
 }
@@ -192,7 +203,7 @@ func TestRootHandler_Post(t *testing.T) {
 	// Create a request with the city parameter.
 	form := url.Values{}
 	form.Add("city", "London")
-	url := fmt.Sprintf("http://localhost:%s?%s", server.Addr, form.Encode())
+	url := fmt.Sprintf("http://localhost%s?%s", server.Addr, form.Encode())
 	req, err := http.NewRequest("POST", url, nil)
 	req.Form = form
 	if err != nil {
@@ -251,26 +262,25 @@ func TestRootHandler_Post_ValidInputs(t *testing.T) {
 		t.Run(tt.city, func(t *testing.T) {
 			form := url.Values{}
 			form.Add("city", tt.city)
-			req, err := http.NewRequest("POST", "/", strings.NewReader(form.Encode()))
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost%s?city=%s", server.Addr, tt.city), strings.NewReader(form.Encode()))
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			rr := httptest.NewRecorder()
-			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				rootHandler(w, r, nil, "test_api_key") // Pass nil for Redis in this test
-			})
-
-			handler.ServeHTTP(rr, req)
+			client := http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
 
 			if tt.expectErr {
-				if status := rr.Code; status != http.StatusBadRequest {
-					t.Errorf("Expected status bad request; got %v", rr.Code)
+				if status := resp.StatusCode; status != http.StatusBadRequest {
+					t.Errorf("Expected status bad request; got %v", resp.StatusCode)
 				}
 			} else {
-				if status := rr.Code; status != http.StatusOK {
-					t.Errorf("Expected status OK; got %v", rr.Code)
+				if status := resp.StatusCode; status != http.StatusOK {
+					t.Errorf("Expected status OK; got %v", resp.StatusCode)
 				}
 			}
 		})
