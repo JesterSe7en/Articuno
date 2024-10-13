@@ -95,8 +95,8 @@ func startWebServer(server *http.Server, rdb *redis.Client, apiKey string) error
 		rootHandler(w, r, rdb, apiKey)
 	})
 
-	log.Println("Listening on localhost:8080")
-	return http.ListenAndServe(":8080", nil)
+	log.Printf("Starting server on localhost%s\n", server.Addr)
+	return http.ListenAndServe(server.Addr, nil)
 }
 
 func getRedisConnection() (*redis.Client, error) {
@@ -175,7 +175,7 @@ func getWeatherData(city string, rdb *redis.Client, apiKey string) (string, erro
 	} // Return the value and nil for no error
 
 	// Save data in redis
-	err = rdb.Set(context.Background(), city, string(weatherData), 0).Err()
+	err = rdb.Set(context.Background(), city, string(weatherData), 24*time.Hour).Err()
 	if err != nil {
 		return "", err
 	}
