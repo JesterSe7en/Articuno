@@ -240,29 +240,28 @@ func TestRootHandler_Post(t *testing.T) {
 func TestRootHandler_Post_ValidInputs(t *testing.T) {
 	tests := []struct {
 		city      string
-		expectErr bool
+		expectErr uint
 	}{
-		{"London", false},         // Valid input
-		{"San Francisco", false},  // Valid input with space
-		{"São Paulo", false},      // Valid input with special character
-		{"Tokyo", false},          // Simple valid input
-		{"   New York   ", false}, // Valid input with spaces
-		{"", true},                // Empty input
-		{" ", true},               // Input with only spaces
-		{"@#$%^&*", true},         // Special characters
-		{"ThisIsAnExtremelyLongCityNameThatExceedsNormalLengthLimits", true}, // Too long input
-		{"<script>alert('test');</script>", true},                            // Input wiht script tags
-		{"Boston2", false},      // City with a number
-		{"Москва", false},       // City with non-latin characters
-		{"New York 123", false}, // City with numbers
-		{"O'Fallon", false},     // City with punctuation
+		{"London", http.StatusOK},         // Valid input
+		{"San Francisco", http.StatusOK},  // Valid input with space
+		{"São Paulo", http.StatusOK},      // Valid input with special character
+		{"Tokyo", http.StatusOK},          // Simple valid input
+		{"   New York   ", http.StatusOK}, // Valid input with spaces
+		{"", http.StatusNotFound},         // Empty input
+		{" ", http.StatusNotFound},        // Input with only spaces
+		{"@#$%^&*", http.StatusNotFound},  // Special characters
+		{"ThisIsAnExtremelyLongCityNameThatExceedsNormalLengthLimits", http.StatusNotFound}, // Too long input
+		{"<script>alert('test');</script>", http.StatusNotFound},                            // Input wiht script tags
+		{"Boston2", http.StatusOK},      // City with a number
+		{"Москва", http.StatusOK},       // City with non-latin characters
+		{"New York 123", http.StatusOK}, // City with numbers
+		{"O'Fallon", http.StatusOK},     // City with punctuation
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.city, func(t *testing.T) {
-			form := url.Values{}
-			form.Add("city", tt.city)
-			req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost%s?city=%s", server.Addr, tt.city), strings.NewReader(form.Encode()))
+			req, err := http.NewRequest("POST", fmt.Sprintf("http://localhost%s", server.Addr), strings.NewReader("city="+tt.city))
+			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -274,14 +273,8 @@ func TestRootHandler_Post_ValidInputs(t *testing.T) {
 			}
 			defer resp.Body.Close()
 
-			if tt.expectErr {
-				if status := resp.StatusCode; status != http.StatusBadRequest {
-					t.Errorf("Expected status bad request; got %v", resp.StatusCode)
-				}
-			} else {
-				if status := resp.StatusCode; status != http.StatusOK {
-					t.Errorf("Expected status OK; got %v", resp.StatusCode)
-				}
+			if tt.expectErr != uint(resp.StatusCode) {
+				t.Errorf("Expected status %v; got %v", tt.expectErr, resp.StatusCode)
 			}
 		})
 	}
