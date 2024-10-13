@@ -14,15 +14,36 @@ import (
 
 func main() {
 
-	rdb := getRedisConnection()
-	if rdb == nil {
-		os.Exit(1)
-	}
+	// TODO: maybe add support for cli
+	// if location given, maybe don't start server and just call the api
 
-	// Ping the redis server
-	err := rdb.Ping(context.Background()).Err()
+	// args := os.Args[1:]
+
+	// if args[0] == "-h" || args[0] == "--help" {
+	// 	fmt.Println("Usage: weather_api <port number> <location> ")
+	// 	os.Exit(0)
+	// }
+
+	// if len(args) == 0 {
+	// 	// no arguments, use default values
+	// 	args = []string{"8080", ""}
+	// } else {
+	// 	// check if the first argument is a port number
+	// 	if _, err := strconv.Atoi(args[0]); err != nil {
+	// 		fmt.Println("Invalid port number")
+	// 		os.Exit(1)
+	// 	}
+
+	// 	// check if the second argument is a location
+	// 	if len(args[1] == 0) {
+	// 		fmt.Println("Invalid location")
+	// 		os.Exit(1)
+	// 	}
+	// }
+
+	rdb, err := getRedisConnection()
 	if err != nil {
-		fmt.Println("Cannot ping redis server:", err)
+		log.Println("Cannot connect to Redis:", err)
 		os.Exit(1)
 	}
 
