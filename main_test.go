@@ -23,7 +23,6 @@ var sigChan = make(chan os.Signal, 1)
 var serverReady = make(chan struct{})
 
 func setup() error {
-
 	// Initialize the Redis client
 	if testRedisClient != nil {
 		return fmt.Errorf("attempted to setup test redis client twice")
@@ -52,33 +51,18 @@ func setup() error {
 		{"Amsterdam", `{"location": "Amsterdam", "temperature": "14°C"}`},
 	}
 
+	// Pipeline the SET commands to make this faster and more efficient
 	pipe := testRedisClient.Pipeline()
-
 	for _, data := range testingData {
 		pipe.Set(context.Background(), data.city, data.weatherData, 0)
 	}
-	cmds, err := pipe.Exec(context.Background())
-
+	_, err := pipe.Exec(context.Background())
 	if err != nil {
 		return err
 	}
 
-	for _, cmd := range cmds {
-		if cmd.Err() != nil {
-			return cmd.Err()
-		}
-	}
-
 	// Start the web server in a goroutine
 	go func() {
-		// Signal readiness when the server starts accepting connections
-		mux := http.NewServeMux()
-		mux.HandleFunc("/health-check", func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		})
-
-		server.Handler = mux
-
 		close(serverReady) // Signal that the server is ready to handle requests
 
 		if err := startWebServer(server, testRedisClient, os.Getenv("WEATHER_API_KEY")); err != nil {
@@ -156,43 +140,32 @@ func TestRootHandler_Get(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-
-		// Create a request to pass to our handler.
 		req, err := http.NewRequest("GET", fmt.Sprintf("http://localhost%s%s", server.Addr, tt.route), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		client := &http.Client{}
-		resp, err := client.Do(req)
-
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
 		defer resp.Body.Close()
 
-		// Check the status code is what we expect.
-		if status := resp.StatusCode; status != http.StatusOK {
-			t.Errorf("handler returned wrong status code: got %v want %v", status, http.StatusOK)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("handler returned wrong status code: got %v want %v", resp.StatusCode, http.StatusOK)
 		}
 
-		f, err := os.Open(tt.filename)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer f.Close()
-		contents, err := io.ReadAll(f)
+		b, err := os.ReadFile(tt.filename)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		rb, err := io.ReadAll(resp.Body)
 		if err != nil {
 			t.Fatal(err)
 		}
 
-		expected := string(contents)
-		if string(body) != expected {
+		if string(rb) != string(b) {
 			t.Errorf("handler returned unexpected body")
 		}
 	}
@@ -210,8 +183,7 @@ func TestRootHandler_Post(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := http.DefaultClient.Do(req)
 
 	if err != nil {
 		t.Fatal(err)
@@ -229,8 +201,7 @@ func TestRootHandler_Post(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Check that the response body contains the expected content (you may want to adjust this)
-	expected := "City: London \nWeather Data: " // Adjust according to your actual data
+	expected := `{"location": "London", "temperature": "15°C"}`
 	if !strings.Contains(string(body), expected) {
 		t.Errorf("handler returned unexpected body")
 	}
@@ -266,8 +237,7 @@ func TestRootHandler_Post_ValidInputs(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			client := http.Client{}
-			resp, err := client.Do(req)
+			resp, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatal(err)
 			}
