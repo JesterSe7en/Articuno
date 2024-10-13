@@ -9,8 +9,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -131,8 +133,7 @@ func rootHandler(w http.ResponseWriter, r *http.Request, rdb *redis.Client, apiK
 		return
 	}
 
-	city := html.EscapeString(r.FormValue("city"))
-	weatherData, err := getWeatherData(city, rdb, apiKey)
+	weatherData, err := getWeatherData(r.FormValue("city"), rdb, apiKey)
 
 	if err != nil {
 		http.Error(w, "City not found", http.StatusNotFound)
@@ -140,12 +141,13 @@ func rootHandler(w http.ResponseWriter, r *http.Request, rdb *redis.Client, apiK
 	}
 
 	w.Header().Set("Content-Type", "text/json")
-	fmt.Fprintf(w, "City: %s, Weather Data: %s", city, weatherData)
+	fmt.Fprintf(w, "City: %s, Weather Data: %s", html.EscapeString(r.FormValue("city")), weatherData)
 }
 
 func getWeatherData(city string, rdb *redis.Client, apiKey string) (string, error) {
-
+	city = url.QueryEscape(strings.TrimSpace(html.EscapeString(city)))
 	if city == "" {
+
 		return "", fmt.Errorf("City cannot be empty")
 	}
 
