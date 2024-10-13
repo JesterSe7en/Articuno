@@ -4,36 +4,116 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
-// Global variables for Redis client and context
-var rdb *redis.Client
-var ctx = context.Background()
+var testRedisClient *redis.Client
+var server = &http.Server{
+	Addr: ":8080",
+}
+var sigChan = make(chan os.Signal, 1)
 
-func globalSetup() error {
-	if rdb != nil {
-		return fmt.Errorf("Attempted to setup global redis client twice")
+func setup() error {
+
+	// Initalize the redis client
+	if testRedisClient != nil {
+		return fmt.Errorf("attempted to setup test redis client twice")
 	}
 
-	redis_url := os.Getenv("REDIS_URL")
-	redis_password := os.Getenv("REDIS_PASSWORD")
-	if redis_url == "" || redis_password == "" {
-		return fmt.Errorf("Please set the REDIS_URL and REDIS_PASSWORD environment variables")
+	redisURL := os.Getenv("REDIS_URL")
+	redisPassword := os.Getenv("REDIS_PASSWORD")
+	if redisURL == "" || redisPassword == "" {
+		return fmt.Errorf("please set the REDIS_URL and REDIS_PASSWORD environment variables")
 	}
 
-	rdb = redis.NewClient(&redis.Options{
-		Addr:     redis_url,
-		Password: redis_password,
+	testRedisClient = redis.NewClient(&redis.Options{
+		Addr:     redisURL,
+		Password: redisPassword,
 		DB:       0,
 	})
+
+	// Prepare test data
+	testingData := [...]struct {
+		city        string
+		weatherData string
+	}{
+		{"London", `{"location": "London", "temperature": "15°C"}`},
+		{"Paris", `{"location": "Paris", "temperature": "18°C"}`},
+		{"Berlin", `{"location": "Berlin", "temperature": "13°C"}`},
+		{"Amsterdam", `{"location": "Amsterdam", "temperature": "14°C"}`},
+	}
+
+	pipe := testRedisClient.Pipeline()
+
+	for _, data := range testingData {
+		pipe.Set(context.Background(), data.city, data.weatherData, 0)
+	}
+	cmds, err := pipe.Exec(context.Background())
+
+	if err != nil {
+		return err
+	}
+
+	for _, cmd := range cmds {
+		if cmd.Err() != nil {
+			return cmd.Err()
+		}
+	}
+
+	go func() {
+		if err := startWebServer(server, testRedisClient, os.Getenv("WEATHER_API_KEY")); err != nil {
+			log.Fatalf("Failed to start web server: %v", err)
+		}
+	}()
+
+	go func() {
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM) // respond to SIGINT(ctrl+c) and SIGTERM (system asks the program to terminate gracefully)
+		<-sigChan                                               // block until a signal is received
+	}()
+
+	return nil
+}
+
+func teardown() {
+	if testRedisClient != nil {
+		testRedisClient.Close()
+		testRedisClient = nil
+	}
+
+	close(sigChan)
+
+	shutdownCtx, shutdownRelease := context.WithTimeout(context.Background(), 10*time.Second) // 10 seconds wait for graceful shutdown
+	defer shutdownRelease()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("HTTP shutdown error: %v", err)
+	}
+	log.Println("Graceful shutdown complete.")
+}
+
+func TestMain(m *testing.M) {
+	if err := setup(); err != nil {
+		fmt.Println("Test setup failed:", err)
+		teardown()
+		os.Exit(1)
+	}
+
+	defer teardown()
+	m.Run()
+}
+
+func TestGetWeatherData(t *testing.T) {
 
 	testingData := []struct {
 		city        string
@@ -45,80 +125,17 @@ func globalSetup() error {
 		{"Amsterdam", `{"location": "Amsterdam", "temperature": "14°C"}`},
 	}
 
-	pipe := rdb.Pipeline()
-
-	for _, data := range testingData {
-		pipe.Set(ctx, data.city, data.weatherData, 0)
-	}
-	cmds, err := pipe.Exec(ctx)
-
-	if err != nil {
-		return err
-	}
-
-	// check individual errors
-	for _, cmd := range cmds {
-		if cmd.Err() != nil {
-			return cmd.Err()
+	for _, testCase := range testingData {
+		// Call the function
+		weatherData, err := getWeatherData(testCase.city, testRedisClient, "")
+		if err != nil {
+			t.Errorf("Expected no error, got %v", err)
 		}
-	}
-	return nil
-}
-func globalTeardown() {
-	if rdb != nil {
-		rdb.Close()
-	}
-}
 
-func TestMain(m *testing.M) {
-	err := globalSetup()
-	if err != nil {
-		fmt.Println("Test setup failed: ", err)
-		globalTeardown()
-		os.Exit(1)
-	}
-
-	defer globalTeardown()
-
-	fmt.Println("Test setup successful; running tests...")
-	code := m.Run()
-
-	os.Exit(code)
-}
-
-func TestGetWeatherData(t *testing.T) {
-	// Just use existing Redis since developing on Windows rn
-	// Ideally use a local Redis instance
-	redis_url := os.Getenv("REDIS_URL")
-	redis_password := os.Getenv("REDIS_PASSWORD")
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     redis_url, // Use existing Redis instance
-		Password: redis_password,
-	})
-
-	// Mock API response
-	city := "London"
-
-	// Assume you have a way to mock the weather API response
-	// This is a simple implementation just for testing purposes
-	mockWeatherData := `{"location": "London", "temperature": "15°C"}`
-	res, err := rdb.Set(context.Background(), city, mockWeatherData, 0).Result()
-	if err != nil {
-		t.Errorf("Expected no error, got %v", err)
-	}
-	if res != "OK" {
-		t.Errorf("Expected 'OK', got %s", res)
-	}
-
-	// Call the function
-	weatherData, err := getWeatherData(city, rdb, "")
-	if err != nil {
-		t.Errorf("Expected no error, got %v", err)
-	}
-
-	expected := mockWeatherData
-	if weatherData != expected {
-		t.Errorf("Expected %s, got %s", expected, weatherData)
+		expected := testCase.weatherData
+		if weatherData != expected {
+			t.Errorf("Expected %s, got %s", expected, weatherData)
+		}
 	}
 }
 
