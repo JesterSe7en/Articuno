@@ -64,9 +64,8 @@ This project demonstrates:
    $env:WEATHER_API_KEY = "your_api_key"
    $env:REDIS_PASSWORD = "your_redis_password"
    $env:REDIS_URL = "localhost:6379"
-3. **Install Redis (if not installed already)**: For this project, a Redis docker container hosted on a raspberry pi was used to cache the weather data.
+3. **Setup Redis (if not already)**: For this project, a Redis docker container hosted on a raspberry pi was used to cache the weather data.
    ```bash
-   sudo apt-get install redis-server
    # optional to check the redis instance
    sudo apt-get install redis-cli
 4. **Configure Redis container**:
