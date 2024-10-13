@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"html/template"
 	"io"
+	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -50,41 +55,76 @@ func main() {
 	// Get the API key from the environment variable
 	apiKey := os.Getenv("WEATHER_API_KEY")
 	if apiKey == "" {
-		fmt.Println("Please set the WEATHER_API_KEY environment variable")
+		log.Println("Please set the WEATHER_API_KEY environment variable")
 		os.Exit(1)
 	}
 
-	// url := fmt.Sprintf("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/%s/%s/%s?key=%s", location, date1, date2, apiKey)
-	// fmt.Println(url)
+	// url := log.Sprintf("https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services/timeline/%s/%s/%s?key=%s", location, date1, date2, apiKey)
+	// log.Println(url)
 
-	startWebServer(rdb, apiKey)
+	// Server
+	server := &http.Server{
+		Addr: ":8080",
+	}
+	go func() {
+		err = startWebServer(server, rdb, apiKey)
+		// http.ListenAndServe() returns ErrSeverClosed on error; not nil
+		// https://dev.to/mokiat/proper-http-shutdown-in-go-3fji
+		if !errors.Is(err, http.ErrServerClosed) {
+			log.Println("Cannot start web server:", err)
+		}
+	}()
+
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM) // respond to SIGINT(ctrl+c) and SIGTERM (system asks the program to terminate gracefully)
+	<-sigChan                                               // block until a signal is received
+
+	shutdownCtx, shutdownRelease := context.WithTimeout(context.Background(), 10*time.Second) // 10 seconds wait for graceful shutdown
+	defer shutdownRelease()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("HTTP shutdown error: %v", err)
+	}
+	log.Println("Graceful shutdown complete.")
+
 }
-func startWebServer(rdb *redis.Client, apiKey string) {
+func startWebServer(server *http.Server, rdb *redis.Client, apiKey string) error {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		rootHandler(w, r, rdb, apiKey)
 	})
 
-	fmt.Println("Listening on port localhost:8080")
-	http.ListenAndServe(":8080", nil)
+	log.Println("Listening on localhost:8080")
+	return http.ListenAndServe(":8080", nil)
 }
 
-func getRedisConnection() *redis.Client {
+func getRedisConnection() (*redis.Client, error) {
 	redisURL := os.Getenv("REDIS_URL")
 	redisPassword := os.Getenv("REDIS_PASSWORD")
+
+	// Check if environment variables are set
 	if redisURL == "" || redisPassword == "" {
-		fmt.Println("Please set the REDIS_URL and REDIS_PASSWORD environment variables")
-		return nil
+		return nil, fmt.Errorf("please set the REDIS_URL and REDIS_PASSWORD environment variables")
 	}
-	return redis.NewClient(&redis.Options{
+
+	// Create a new Redis client
+	client := redis.NewClient(&redis.Options{
 		Addr:     redisURL,
 		Password: redisPassword,
+		DB:       0, // Use default DB
 	})
+
+	if err := client.Ping(context.Background()).Err(); err != nil {
+		return nil, fmt.Errorf("failed to connect to Redis: %v", err)
+	}
+
+	return client, nil // Return both the client and nil for no error
 }
+
 func rootHandler(w http.ResponseWriter, r *http.Request, rdb *redis.Client, apiKey string) {
 	if r.Method != "POST" {
 		tmpl, err := template.New("index.html").ParseFiles("index.html") // load the html template
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			return
 		}
 		tmpl.Execute(w, nil)
@@ -98,10 +138,17 @@ func rootHandler(w http.ResponseWriter, r *http.Request, rdb *redis.Client, apiK
 		http.Error(w, "City not found", http.StatusNotFound)
 		return
 	}
-	fmt.Fprintf(w, "City: %s \nWeather Data: %s ", city, weatherData)
+
+	w.Header().Set("Content-Type", "text/json")
+	fmt.Fprintf(w, "City: %s, Weather Data: %s", city, weatherData)
 }
 
 func getWeatherData(city string, rdb *redis.Client, apiKey string) (string, error) {
+
+	if city == "" {
+		return "", fmt.Errorf("City cannot be empty")
+	}
+
 	// Check redis cache, if not in redis, fetch from API
 	val, _ := rdb.Get(context.Background(), city).Result()
 
