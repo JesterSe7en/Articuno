@@ -44,39 +44,58 @@ This project demonstrates:
 
 ---
 
+## Redis Caching Strategy
+
+- Cached data is stored for 1 hour to ensure weather data is relatively fresh.
+- After the time expires, the server fetches new data from the Visual Crossing API.
+- Redis automatically will remove expired data, ensuring only recent weather queries are cached.
+
+---
+
 ## Installation 🛠️
 
 1. **Clone the repository**:
-   ```bash
+   ```powershell
    git clone https://github.com/yourusername/weather_api.git
    cd weather_api
+
 2. **Set up environment variables**:  Make sure to set the `WEATHER_API_KEY`, `REDIS_PASSWORD`, and `REDIS_URL` environment variables.
-   ```bash
-   export WEATHER_API_KEY="your_api_key"
-   export REDIS_URL="localhost:6379"
-   export REDIS_PASSWORD="your_redis_password"
-   ```
-3. **Install Redis (if not installed already)**:
+   ```powershell
+   $env:WEATHER_API_KEY = "your_api_key"
+   $env:REDIS_PASSWORD = "your_redis_password"
+   $env:REDIS_URL = "localhost:6379"
+3. **Install Redis (if not installed already)**: For this project, a Redis docker container hosted on a raspberry pi was used to cache the weather data.
    ```bash
    sudo apt-get install redis-server
-   ```
-4. **Run Redis**:
-   ```bash
-   redis-server
-   ```
+   # optional to check the redis instance
+   sudo apt-get install redis-cli
+4. **Configure Redis container**:
+   ```yaml
+   version: '3.8'
+   services:
+   redis:
+      image: redis:latest
+      restart: always
+      ports:
+         - '6379:6379'
+      command: redis-server --save 60 1 --loglevel warning --requirepass <some_redis_password>
+      volumes:
+         - ./data:/data
 5. **Build the project**:
-   ```bash
+   ```powershell
    go build -o weather_api main.go
-   ```
 6. **Run the project**:
-   ```bash
+   ```powershell
    ./weather_api
-   ```
 7. **Access the web application**: Open your browser and go to `http://localhost:8080` to access the weather form.
 
 ## Testing 🧪
 
 Basic unit tests are provided in the `main_test.go` file.
+The unit tests cover:
+- **API calls**: Ensuring the correct data is retrieved from the Visual Crossing API.
+- **Cache validation**: Ensuring that cached data is correctly retrieved and invalidated after the set time period.
+- **Form validation**: Checking that the input validation works as expected (for both valid and invalid inputs).
 
 To run them, run `go test` from the root directory.
 
