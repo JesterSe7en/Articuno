@@ -119,6 +119,10 @@ I built this project to highlight some of my backend engineering skills, focusin
 - **Unit Testing**: Adding some basic tests to keep everything running smoothly.
 - **Documentation**: Writing clear instructions to help others understand how to use the project.
 
+## Improvements💡
+
+- Add support for CLI arguments for inputting location
+
 ## Acknowledgements 🙏
 
 - [Visual Crossing Weather API](https://www.visualcrossing.com/weather-api)
