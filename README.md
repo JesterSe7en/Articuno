@@ -1,8 +1,6 @@
 # Weather API 🌦️
 
-**Weather API** is a simple web server built in Go that fetches weather data from the [Visual Crossing Weather API](https://www.visualcrossing.com/weather-api) and presents it in a user-friendly HTML format. The server allows users to query weather data by city or ZIP code (USA only) and implements caching with Redis to optimize repeated queries.
-
-This project is a demonstration of backend development skills, API integration, caching mechanisms, and the ability to create simple, effective web applications.
+**Weather API** is a simple web server built in Go that fetches weather data from the [Visual Crossing Weather API](https://www.visualcrossing.com/weather-api) and prints out the raw json data. The server allows users to query weather data by city or ZIP code (USA only) and implements caching with Redis to optimize repeated queries.
 
 ---
 
