@@ -122,6 +122,7 @@ I built this project to highlight some of my backend engineering skills, focusin
 ## Improvements💡
 
 - Add support for CLI arguments for inputting location
+- Create a front-end to display weather data
 
 ## Acknowledgements 🙏
 
