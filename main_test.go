@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -30,12 +31,12 @@ func setup() error {
 
 	redisURL := os.Getenv("REDIS_URL")
 	redisPassword := os.Getenv("REDIS_PASSWORD")
-	if redisURL == "" || redisPassword == "" {
+	if redisURL == "" {
 		return fmt.Errorf("please set the REDIS_URL and REDIS_PASSWORD environment variables")
 	}
 
 	testRedisClient = redis.NewClient(&redis.Options{
-		Addr:     redisURL,
+		Addr:     fmt.Sprintf("%s:%d", redisURL, defaultRedisPort),
 		Password: redisPassword,
 		DB:       0,
 	})
@@ -65,8 +66,10 @@ func setup() error {
 	go func() {
 		close(serverReady) // Signal that the server is ready to handle requests
 
-		if err := startWebServer(server, testRedisClient, os.Getenv("WEATHER_API_KEY")); err != nil {
-			log.Fatalf("Failed to start web server: %v", err)
+		err := startWebServer(server, testRedisClient, os.Getenv("WEATHER_API_KEY"))
+		if !errors.Is(err, http.ErrServerClosed) {
+			fmt.Println("cannot start web server", err)
+			return
 		}
 	}()
 
