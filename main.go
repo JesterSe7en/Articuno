@@ -149,6 +149,7 @@ func rootHandler(w http.ResponseWriter, r *http.Request, rdb *redis.Client, apiK
 	}
 
 	w.Header().Set("Content-Type", "text/json")
+	w.Write([]byte(weatherData))
 	fmt.Fprintf(w, "City: %s, Weather Data: %s", html.EscapeString(r.FormValue("city")), weatherData)
 }
 
