@@ -19,6 +19,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+var defaultRedisPort = 6379
+
 func main() {
 
 	// TODO: maybe add support for cli
@@ -91,12 +93,17 @@ func main() {
 
 }
 func startWebServer(server *http.Server, rdb *redis.Client, apiKey string) error {
+	if server == nil || rdb == nil || apiKey == "" {
+		return fmt.Errorf("invalid arguments provided, cannot start web server")
+	}
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		rootHandler(w, r, rdb, apiKey)
 	})
 
 	log.Printf("Starting server on localhost%s\n", server.Addr)
-	return http.ListenAndServe(server.Addr, nil)
+
+	return server.ListenAndServe()
 }
 
 func getRedisConnection() (*redis.Client, error) {
@@ -104,13 +111,14 @@ func getRedisConnection() (*redis.Client, error) {
 	redisPassword := os.Getenv("REDIS_PASSWORD")
 
 	// Check if environment variables are set
-	if redisURL == "" || redisPassword == "" {
+	// redis password could be empty
+	if redisURL == "" {
 		return nil, fmt.Errorf("please set the REDIS_URL and REDIS_PASSWORD environment variables")
 	}
 
 	// Create a new Redis client
 	client := redis.NewClient(&redis.Options{
-		Addr:     redisURL,
+		Addr:     fmt.Sprintf("%s:%d", redisURL, defaultRedisPort),
 		Password: redisPassword,
 		DB:       0, // Use default DB
 	})
@@ -148,7 +156,7 @@ func getWeatherData(city string, rdb *redis.Client, apiKey string) (string, erro
 	city = url.QueryEscape(strings.TrimSpace(html.EscapeString(city)))
 	if city == "" {
 
-		return "", fmt.Errorf("City cannot be empty")
+		return "", fmt.Errorf("city cannot be empty")
 	}
 
 	// Check redis cache, if not in redis, fetch from API
@@ -165,7 +173,7 @@ func getWeatherData(city string, rdb *redis.Client, apiKey string) (string, erro
 	if err != nil {
 		return "", err
 	} else if resp.StatusCode != 200 {
-		return "", fmt.Errorf("Request failed with status code: %d", resp.StatusCode)
+		return "", fmt.Errorf("request failed with status code: %d", resp.StatusCode)
 	}
 	defer resp.Body.Close()
 
